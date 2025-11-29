@@ -347,6 +347,7 @@
 "Assets/Scripts/Core/TimeDilationSystem.cs"
 "Assets/Scripts/Debug/GhostToggleSystem.cs"
 "Assets/Scripts/Debug/RealPositionGhost.cs"
+"Assets/Scripts/Enemies/EnemyWord.cs"
 "Assets/Scripts/Entities/FirstPersonCamera.cs"
 "Assets/Scripts/Entities/PlayerController.cs"
 "Assets/Scripts/Motion/CircularMotionSO.cs"

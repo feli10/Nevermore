@@ -169,7 +169,13 @@ public class ProjectileComponent : MonoBehaviour
                         float dist = Vector3.Distance(closestOnCollider, closest);
                         if (dist <= radius)
                         {
-                            Destroy(mover.gameObject);
+                            // Prefer to apply a letter hit if this mover has an EnemyWord component
+                            var enemyWord = mover.GetComponent<EnemyWord>();
+                            if (enemyWord != null)
+                                enemyWord.ApplyHit();
+                            else
+                                Destroy(mover.gameObject);
+
                             DestroyProjectile();
                             return;
                         }
@@ -181,7 +187,12 @@ public class ProjectileComponent : MonoBehaviour
                         float dist = Vector3.Distance(closest, visPos);
                         if (dist <= radius + fallbackRadius)
                         {
-                            Destroy(mover.gameObject);
+                            var enemyWord = mover.GetComponent<EnemyWord>();
+                            if (enemyWord != null)
+                                enemyWord.ApplyHit();
+                            else
+                                Destroy(mover.gameObject);
+
                             DestroyProjectile();
                             return;
                         }
@@ -220,33 +231,42 @@ public class ProjectileComponent : MonoBehaviour
                 if (isEnemy)
                 {
                     // Prefer destroying the GameObject that owns a MotionFunctionComponent (common case)
-                    var moverComp = hit.collider.GetComponentInParent<MotionFunctionComponent>();
-                    if (moverComp != null)
+                    // If the hit object belongs to an EnemyWord, apply a letter hit first
+                    var enemyWord = hit.collider.GetComponentInParent<EnemyWord>();
+                    if (enemyWord != null)
                     {
-                        Destroy(moverComp.gameObject);
+                        enemyWord.ApplyHit();
                     }
                     else
                     {
-                        // If no MotionFunctionComponent, try to find a parent with the enemy tag
-                        Transform parentWithTag = null;
-                        if (!string.IsNullOrEmpty(enemyTag))
+                        var moverComp = hit.collider.GetComponentInParent<MotionFunctionComponent>();
+                        if (moverComp != null)
                         {
-                            Transform p = hit.collider.transform;
-                            while (p != null)
-                            {
-                                if (p.CompareTag(enemyTag))
-                                {
-                                    parentWithTag = p;
-                                    break;
-                                }
-                                p = p.parent;
-                            }
+                            Destroy(moverComp.gameObject);
                         }
-
-                        if (parentWithTag != null)
-                            Destroy(parentWithTag.gameObject);
                         else
-                            Destroy(hit.collider.gameObject);
+                        {
+                            // If no MotionFunctionComponent, try to find a parent with the enemy tag
+                            Transform parentWithTag = null;
+                            if (!string.IsNullOrEmpty(enemyTag))
+                            {
+                                Transform p = hit.collider.transform;
+                                while (p != null)
+                                {
+                                    if (p.CompareTag(enemyTag))
+                                    {
+                                        parentWithTag = p;
+                                        break;
+                                    }
+                                    p = p.parent;
+                                }
+                            }
+
+                            if (parentWithTag != null)
+                                Destroy(parentWithTag.gameObject);
+                            else
+                                Destroy(hit.collider.gameObject);
+                        }
                     }
 
                     DestroyProjectile();

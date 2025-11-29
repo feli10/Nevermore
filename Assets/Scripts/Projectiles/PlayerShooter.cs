@@ -34,7 +34,8 @@ public class PlayerShooter : MonoBehaviour
     {
         if (projectilePrefab == null) return;
 
-        Vector3 spawnPos = transform.position + cam.forward * muzzleOffset;
+        // Spawn projectiles from camera position so they naturally follow camera height/position
+        Vector3 spawnPos = cam.position + cam.forward * muzzleOffset;
         Quaternion spawnRot = Quaternion.LookRotation(cam.forward, Vector3.up);
 
         GameObject go = Instantiate(projectilePrefab, spawnPos, spawnRot);

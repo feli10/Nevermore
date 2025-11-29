@@ -355,6 +355,7 @@
 "Assets/Scripts/Motion/MotionFunctionSO.cs"
 "Assets/Scripts/Projectiles/PlayerShooter.cs"
 "Assets/Scripts/Projectiles/ProjectileComponent.cs"
+"Assets/Scripts/UI/CrosshairUI.cs"
 -langversion:9.0
 /deterministic
 /optimize+

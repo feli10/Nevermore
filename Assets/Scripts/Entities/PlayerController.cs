@@ -71,6 +71,15 @@ public class PlayerController : MonoBehaviour
 
         // --- MOVE PLAYER ---
         cc.Move(velocity * dt);
+
+        // Prevent the player from leaving the play area: clamp position inside bounds and stop horizontal velocity
+        if (PlayAreaManager.Instance != null && PlayAreaManager.Instance.IsOutside(transform.position))
+        {
+            Vector3 clamped = PlayAreaManager.Instance.ClampPosition(transform.position);
+            transform.position = clamped;
+            velocity.x = 0f;
+            velocity.z = 0f;
+        }
     }
 
     // Ground detection

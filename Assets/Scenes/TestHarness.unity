@@ -629,7 +629,7 @@ MonoBehaviour:
   fireRate: 6
   muzzleOffset: 0.6
   defaultMotionFunction: {fileID: 11400000, guid: 7b58130fc95204353a41cbcac55ab588, type: 2}
-  defaultSpeed: 9
+  defaultSpeed: 20
   defaultRadius: 0.1
 --- !u!1 &1992868521
 GameObject:

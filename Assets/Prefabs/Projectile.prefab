@@ -129,7 +129,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   motionFunction: {fileID: 0}
-  instanceSpeed: 20
+  instanceSpeed: 0
   instanceDirection: {x: 0, y: 0, z: 1}
   enforceSpeedLimit: 1
   radius: 0.1
@@ -140,7 +140,10 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 8
   enemyTag: Enemy
-  maxLifetime: 8
+  maxLifetime: 100
   usePlayArea: 1
   realTransform: {fileID: 8412193157107302193}
   visualTransform: {fileID: 4717829358399550693}
+  ghostPrefab: {fileID: 2081938525034490980, guid: a96714d1deeec4fc7afc68ee631fa265, type: 3}
+  bypassTimeDistortionForVisual: 1
+  detectHitsAgainstVisuals: 1

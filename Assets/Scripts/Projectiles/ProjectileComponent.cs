@@ -24,6 +24,10 @@ public class ProjectileComponent : MonoBehaviour
     [Header("Transforms")]
     public Transform realTransform;   // authoritative position (collision)
     public Transform visualTransform; // what the player sees (delayed)
+    [Header("Debug (optional)")]
+    public GameObject ghostPrefab; // optional prefab that will be instantiated to show the real position
+
+    private RealPositionGhost ghostInstance;
 
     // internal
     private float spawnTime;
@@ -31,6 +35,13 @@ public class ProjectileComponent : MonoBehaviour
     private Quaternion spawnRotation; // used to orient motionFunction output
     private Vector3 prevRealPosition;
     private float lifeTimer;
+    
+    [Header("Visual / Collision Options")]
+    [Tooltip("If true, the projectile's visualTransform will show the authoritative (real) position instead of the light-delayed visible position.")]
+    public bool bypassTimeDistortionForVisual = false;
+
+    [Tooltip("If true, the projectile will attempt to detect hits using the enemy's visual transform (what the player sees) instead of the enemy's real position.")]
+    public bool detectHitsAgainstVisuals = false;
 
     void Start()
     {
@@ -47,6 +58,35 @@ public class ProjectileComponent : MonoBehaviour
 
         prevRealPosition = spawnPosition;
         lifeTimer = 0f;
+
+        // Optionally create a debug ghost that mirrors the authoritative (real) transform
+        if (ghostPrefab != null)
+        {
+            GameObject debugManager = GameObject.Find("DebugManager");
+            if (debugManager == null)
+            {
+                debugManager = new GameObject("DebugManager");
+                debugManager.AddComponent<GhostToggleSystem>();
+            }
+
+            Transform ghostsParent = debugManager.transform.Find("Ghosts");
+            if (ghostsParent == null)
+            {
+                GameObject gp = new GameObject("Ghosts");
+                gp.transform.SetParent(debugManager.transform, false);
+                ghostsParent = gp.transform;
+            }
+
+            GameObject g = Instantiate(ghostPrefab, realTransform.position, realTransform.rotation, ghostsParent);
+            ghostInstance = g.GetComponent<RealPositionGhost>();
+            if (ghostInstance == null)
+                ghostInstance = g.AddComponent<RealPositionGhost>();
+
+            ghostInstance.targetRealTransform = realTransform;
+            ghostInstance.followRotation = true;
+            g.name = gameObject.name + "_Ghost";
+            g.SetActive(GhostToggleSystem.GhostsEnabled);
+        }
     }
 
     void Update()
@@ -108,11 +148,51 @@ public class ProjectileComponent : MonoBehaviour
         {
             Vector3 dir = moveDelta / moveDist;
 
-            // SphereCast to detect environment or enemies
+            // If configured to detect hits against visuals, do a proximity check against known visual transforms
+            if (detectHitsAgainstVisuals)
+            {
+                // Iterate motion-driven objects (common case for enemies) and test distance to their visual transform.
+                MotionFunctionComponent[] movers = FindObjectsOfType<MotionFunctionComponent>();
+                foreach (var mover in movers)
+                {
+                    if (mover == null || mover.visualTransform == null) continue;
+
+                    // compute closest point on projectile segment to the visual position
+                    Vector3 visPos = mover.visualTransform.position;
+                    Vector3 closest = ClosestPointOnSegment(prevRealPosition, realWorldPos, visPos);
+
+                    // If the visual object has a collider, use it for precise testing
+                    Collider visCol = mover.visualTransform.GetComponentInChildren<Collider>();
+                    if (visCol != null)
+                    {
+                        Vector3 closestOnCollider = visCol.ClosestPoint(closest);
+                        float dist = Vector3.Distance(closestOnCollider, closest);
+                        if (dist <= radius)
+                        {
+                            Destroy(mover.gameObject);
+                            DestroyProjectile();
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        // fallback spherical check: assume small visual radius
+                        float fallbackRadius = 0.5f;
+                        float dist = Vector3.Distance(closest, visPos);
+                        if (dist <= radius + fallbackRadius)
+                        {
+                            Destroy(mover.gameObject);
+                            DestroyProjectile();
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // Default behaviour: spherecast against layers (environment/enemy masks)
             RaycastHit hit;
             float castLen = moveDist + Mathf.Max(0.01f, radius);
 
-            // Check enemies first (layer mask or tag)
             bool enemyHit = false;
             if (enemyMask != 0)
             {
@@ -121,14 +201,12 @@ public class ProjectileComponent : MonoBehaviour
             }
             else
             {
-                // fallback: any hit — we'll check tag/component
                 if (Physics.SphereCast(prevRealPosition, radius, dir, out hit, castLen, environmentMask, QueryTriggerInteraction.Collide))
                     enemyHit = true;
             }
 
             if (enemyHit && hit.collider != null)
             {
-                // Determine if the collider is an enemy by tag or component
                 bool isEnemy = false;
                 if (enemyMask != 0 && ((1 << hit.collider.gameObject.layer) & enemyMask) != 0)
                     isEnemy = true;
@@ -136,41 +214,75 @@ public class ProjectileComponent : MonoBehaviour
                 if (!isEnemy && !string.IsNullOrEmpty(enemyTag) && hit.collider.CompareTag(enemyTag))
                     isEnemy = true;
 
-                // If not recognized as enemy but has MotionFunctionComponent, treat as target by default
                 if (!isEnemy && hit.collider.GetComponent<MotionFunctionComponent>() != null)
                     isEnemy = true;
 
                 if (isEnemy)
                 {
-                    // Destroy target (simple behavior). Replace with health/damage if you have an Enemy component.
-                    Destroy(hit.collider.gameObject);
+                    // Prefer destroying the GameObject that owns a MotionFunctionComponent (common case)
+                    var moverComp = hit.collider.GetComponentInParent<MotionFunctionComponent>();
+                    if (moverComp != null)
+                    {
+                        Destroy(moverComp.gameObject);
+                    }
+                    else
+                    {
+                        // If no MotionFunctionComponent, try to find a parent with the enemy tag
+                        Transform parentWithTag = null;
+                        if (!string.IsNullOrEmpty(enemyTag))
+                        {
+                            Transform p = hit.collider.transform;
+                            while (p != null)
+                            {
+                                if (p.CompareTag(enemyTag))
+                                {
+                                    parentWithTag = p;
+                                    break;
+                                }
+                                p = p.parent;
+                            }
+                        }
+
+                        if (parentWithTag != null)
+                            Destroy(parentWithTag.gameObject);
+                        else
+                            Destroy(hit.collider.gameObject);
+                    }
+
                     DestroyProjectile();
                     return;
                 }
             }
 
-            // Environment hit (non-enemy)
             RaycastHit envHit;
             if (Physics.SphereCast(prevRealPosition, radius, dir, out envHit, castLen, environmentMask, QueryTriggerInteraction.Ignore))
             {
-                // If this collided with something that is NOT an enemy, treat as environment hit
                 bool hitEnemyViaEnv = (!string.IsNullOrEmpty(enemyTag) && envHit.collider.CompareTag(enemyTag)) ||
                                       (enemyMask != 0 && ((1 << envHit.collider.gameObject.layer) & enemyMask) != 0) ||
                                       (envHit.collider.GetComponent<MotionFunctionComponent>() != null);
 
                 if (!hitEnemyViaEnv)
                 {
-                    // Hit environment: destroy projectile (could spawn effects here)
                     DestroyProjectile();
                     return;
                 }
-                // else it was an enemy but was handled above
             }
         }
 
         // commit real position (authoritative)
         prevRealPosition = realWorldPos;
         realTransform.position = realWorldPos;
+
+        // Keep projectile ghost active state in sync with global toggle (if present)
+        if (ghostInstance != null && ghostInstance.gameObject.activeSelf != GhostToggleSystem.GhostsEnabled)
+        {
+            ghostInstance.gameObject.SetActive(GhostToggleSystem.GhostsEnabled);
+            if (GhostToggleSystem.GhostsEnabled)
+            {
+                ghostInstance.transform.position = realTransform.position;
+                ghostInstance.transform.rotation = realTransform.rotation;
+            }
+        }
 
         // --- Visible position (retarded time: t - d/c) shown to player
         Transform playerT = FindObjectOfType<PlayerController>()?.transform;
@@ -206,6 +318,13 @@ public class ProjectileComponent : MonoBehaviour
             visualTransform.rotation = realTransform.rotation;
         }
 
+        // If configured to bypass time distortion for visuals, show the real (authoritative) position instead
+        if (bypassTimeDistortionForVisual)
+        {
+            visualTransform.position = realWorldPos;
+            visualTransform.rotation = realTransform.rotation;
+        }
+
         // Lifetime & play area check
         lifeTimer += dt;
         if (lifeTimer > maxLifetime)
@@ -224,7 +343,37 @@ public class ProjectileComponent : MonoBehaviour
     void DestroyProjectile()
     {
         // TODO: spawn VFX, SFX here if desired
+        // Destroy any debug ghost we created to avoid dangling ghosts
+        if (ghostInstance != null)
+        {
+            if (ghostInstance.gameObject != null)
+                Destroy(ghostInstance.gameObject);
+            ghostInstance = null;
+        }
+
         Destroy(gameObject);
+    }
+
+    void OnDestroy()
+    {
+        // Safeguard: ensure ghost is removed if the projectile is destroyed by other means
+        if (ghostInstance != null)
+        {
+            if (ghostInstance.gameObject != null)
+                Destroy(ghostInstance.gameObject);
+            ghostInstance = null;
+        }
+    }
+
+    // Utility: closest point on a segment AB to point P
+    Vector3 ClosestPointOnSegment(Vector3 a, Vector3 b, Vector3 p)
+    {
+        Vector3 ab = b - a;
+        float ab2 = Vector3.Dot(ab, ab);
+        if (ab2 == 0f) return a;
+        float t = Vector3.Dot(p - a, ab) / ab2;
+        t = Mathf.Clamp01(t);
+        return a + ab * t;
     }
 
     void OnDrawGizmosSelected()

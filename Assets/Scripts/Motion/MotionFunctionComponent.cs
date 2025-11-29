@@ -14,6 +14,7 @@ public class MotionFunctionComponent : MonoBehaviour
     public bool enforceSpeedLimit = true;
 
     private Vector3 motionCenter;     // objects start here
+    private float motionStartTime;
 
     const float EPS = 1e-6f;
 
@@ -30,6 +31,8 @@ public class MotionFunctionComponent : MonoBehaviour
 
         // The object's starting position defines its motion center.
         motionCenter = realTransform.position;
+        // record the time the motion started so we evaluate functions using local time
+        motionStartTime = Time.time;
 
         // Create a ghost if a prefab exists
         if (ghostPrefab != null)
@@ -73,21 +76,25 @@ public class MotionFunctionComponent : MonoBehaviour
     void Update()
     {
         if (motionFunction == null) return;
-
+        if (realTransform == null || visualTransform == null) return;
         float tWorld = Time.time;
         float dt = Time.deltaTime;
         float c = (TimeDilationSystem.Instance != null)
             ? TimeDilationSystem.Instance.C
             : 10f;
 
+        // local time since motion started
+        float localT = tWorld - motionStartTime;
+
         // ------- REAL POSITION (true physics location) -------
-        Vector3 relativePosNow = motionFunction.EvaluatePosition(tWorld);
+        Vector3 relativePosNow = motionFunction.EvaluatePosition(localT);
 
         // Clamp instantaneous speed to c
         if (enforceSpeedLimit && dt > EPS)
         {
             float tPrev = tWorld - dt;
-            Vector3 prevRelative = motionFunction.EvaluatePosition(tPrev);
+            float localPrev = tPrev - motionStartTime;
+            Vector3 prevRelative = motionFunction.EvaluatePosition(localPrev);
             Vector3 desired = relativePosNow - prevRelative;
             float desiredSpeed = desired.magnitude / dt;
 
@@ -99,18 +106,43 @@ public class MotionFunctionComponent : MonoBehaviour
         }
 
         Vector3 realWorldPos = motionCenter + relativePosNow;
-        realTransform.position = realWorldPos;
-        realTransform.rotation = motionFunction.EvaluateRotation(tWorld);
+
+        // If we're outside the play area, wrap the object to the opposite side by
+        // shifting the motion center. This keeps the motion function's local-space
+        // behavior consistent while teleporting the object across the border.
+        if (PlayAreaManager.Instance != null && PlayAreaManager.Instance.IsOutside(realWorldPos))
+        {
+            Vector3 wrapped = PlayAreaManager.Instance.WrapPosition(realWorldPos);
+            Vector3 delta = wrapped - realWorldPos;
+            motionCenter += delta; // shift center so subsequent relative positions map to wrapped world pos
+            realWorldPos = wrapped;
+        }
+
+        // Ensure the real transform still exists (it may have been destroyed externally)
+        if (realTransform != null)
+        {
+            realTransform.position = realWorldPos;
+            realTransform.rotation = motionFunction.EvaluateRotation(localT);
+        }
 
         // If a ghost exists, keep its active state in sync with the global toggle
-        if (ghostInstance != null && ghostInstance.gameObject.activeSelf != GhostToggleSystem.GhostsEnabled)
+        if (ghostInstance != null)
         {
-            ghostInstance.gameObject.SetActive(GhostToggleSystem.GhostsEnabled);
-            // if enabling, snap immediately to the real position to avoid origin-pop
-            if (GhostToggleSystem.GhostsEnabled)
+            // If the target real transform has been destroyed, destroy the ghost to avoid dangling references
+            if (ghostInstance.targetRealTransform == null)
             {
-                ghostInstance.transform.position = realTransform.position;
-                ghostInstance.transform.rotation = realTransform.rotation;
+                Destroy(ghostInstance.gameObject);
+                ghostInstance = null;
+            }
+            else if (ghostInstance.gameObject.activeSelf != GhostToggleSystem.GhostsEnabled)
+            {
+                ghostInstance.gameObject.SetActive(GhostToggleSystem.GhostsEnabled);
+                // if enabling, snap immediately to the real position to avoid origin-pop
+                if (GhostToggleSystem.GhostsEnabled && realTransform != null)
+                {
+                    ghostInstance.transform.position = realTransform.position;
+                    ghostInstance.transform.rotation = realTransform.rotation;
+                }
             }
         }
 
@@ -128,16 +160,30 @@ public class MotionFunctionComponent : MonoBehaviour
         float tDelayed = tWorld - distance / c;
 
         // Prevent time from going before the motion started
-        if (!motionFunction.AllowNegativeTime && tDelayed < 0f)
-            tDelayed = 0f;
+        // convert delayed world-time to local motion time
+        float localDelayed = tDelayed - motionStartTime;
 
-        tDelayed = Mathf.Clamp(tDelayed, 0f, tWorld);
+        if (!motionFunction.AllowNegativeTime && localDelayed < 0f)
+            localDelayed = 0f;
 
-        Vector3 relativeVisible = motionFunction.EvaluatePosition(tDelayed);
+        localDelayed = Mathf.Clamp(localDelayed, 0f, localT);
+
+        Vector3 relativeVisible = motionFunction.EvaluatePosition(localDelayed);
         Vector3 visibleWorldPos = motionCenter + relativeVisible;
 
         visualTransform.position = visibleWorldPos;
-        visualTransform.rotation = motionFunction.EvaluateRotation(tDelayed);
+        visualTransform.rotation = motionFunction.EvaluateRotation(localDelayed);
+    }
+
+    void OnDestroy()
+    {
+        if (ghostInstance != null)
+        {
+            // Ghosts are parented under DebugManager; destroy them when the host is destroyed to avoid using destroyed transforms
+            if (ghostInstance.gameObject != null)
+                Destroy(ghostInstance.gameObject);
+            ghostInstance = null;
+        }
     }
 
     // Visualize real → visible displacement

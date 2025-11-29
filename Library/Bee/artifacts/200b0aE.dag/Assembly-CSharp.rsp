@@ -343,6 +343,7 @@
 -r:"Library/Bee/artifacts/200b0aE.dag/Unity.VSCode.Editor.ref.dll"
 -r:"Library/Bee/artifacts/200b0aE.dag/UnityEditor.UI.ref.dll"
 -r:"Library/Bee/artifacts/200b0aE.dag/UnityEngine.UI.ref.dll"
+"Assets/Scripts/Core/PlayAreaManager.cs"
 "Assets/Scripts/Core/TimeDilationSystem.cs"
 "Assets/Scripts/Debug/GhostToggleSystem.cs"
 "Assets/Scripts/Debug/RealPositionGhost.cs"
@@ -352,7 +353,6 @@
 "Assets/Scripts/Motion/LinearMotionSO.cs"
 "Assets/Scripts/Motion/MotionFunctionComponent.cs"
 "Assets/Scripts/Motion/MotionFunctionSO.cs"
-"Assets/Scripts/Projectiles/PlayAreaManager.cs"
 "Assets/Scripts/Projectiles/PlayerShooter.cs"
 "Assets/Scripts/Projectiles/ProjectileComponent.cs"
 -langversion:9.0
